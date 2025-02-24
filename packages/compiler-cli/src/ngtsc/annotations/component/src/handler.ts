@@ -272,7 +272,7 @@ export class ComponentDecoratorHandler
 
     // Dependencies can't be deferred during HMR, because the HMR update module can't have
     // dynamic imports and its dependencies need to be passed in directly. If dependencies
-    // are deferred, their imports will be deleted so we won't may lose the reference to them.
+    // are deferred, their imports will be deleted so we may lose the reference to them.
     this.canDeferDeps = !enableHmr;
   }
 
@@ -1222,14 +1222,30 @@ export class ComponentDecoratorHandler
       // Register all Directives and Pipes used at the top level (outside
       // of any defer blocks), which would be eagerly referenced.
       const eagerlyUsed = new Set<ClassDeclaration>();
-      for (const dir of bound.getEagerlyUsedDirectives()) {
-        eagerlyUsed.add(dir.ref.node);
-      }
-      for (const name of bound.getEagerlyUsedPipes()) {
-        if (!pipes.has(name)) {
-          continue;
+
+      if (this.enableHmr) {
+        // In HMR we need to preserve all the dependencies, because they have to remain consistent
+        // with the initially-generated code no matter what the template looks like.
+        for (const dep of dependencies) {
+          if (dep.ref.node !== node) {
+            eagerlyUsed.add(dep.ref.node);
+          } else {
+            const used = bound.getEagerlyUsedDirectives();
+            if (used.some((current) => current.ref.node === node)) {
+              eagerlyUsed.add(node);
+            }
+          }
         }
-        eagerlyUsed.add(pipes.get(name)!.ref.node);
+      } else {
+        for (const dir of bound.getEagerlyUsedDirectives()) {
+          eagerlyUsed.add(dir.ref.node);
+        }
+        for (const name of bound.getEagerlyUsedPipes()) {
+          if (!pipes.has(name)) {
+            continue;
+          }
+          eagerlyUsed.add(pipes.get(name)!.ref.node);
+        }
       }
 
       // Set of Directives and Pipes used across the entire template,
@@ -1617,10 +1633,11 @@ export class ComponentDecoratorHandler
     const perComponentDeferredDeps = this.canDeferDeps
       ? this.resolveAllDeferredDependencies(resolution)
       : null;
+    const defer = this.compileDeferBlocks(resolution);
     const meta: R3ComponentMetadata<R3TemplateDependency> = {
       ...analysis.meta,
       ...resolution,
-      defer: this.compileDeferBlocks(resolution),
+      defer,
     };
     const fac = compileNgFactoryDefField(toFactoryMetadata(meta, FactoryTarget.Component));
 
@@ -1642,10 +1659,12 @@ export class ComponentDecoratorHandler
       ? extractHmrMetatadata(
           node,
           this.reflector,
+          this.evaluator,
           this.compilerHost,
           this.rootDirs,
           def,
           fac,
+          defer,
           classMetadata,
           debugInfo,
         )
@@ -1687,10 +1706,11 @@ export class ComponentDecoratorHandler
     const perComponentDeferredDeps = this.canDeferDeps
       ? this.resolveAllDeferredDependencies(resolution)
       : null;
+    const defer = this.compileDeferBlocks(resolution);
     const meta: R3ComponentMetadata<R3TemplateDependencyMetadata> = {
       ...analysis.meta,
       ...resolution,
-      defer: this.compileDeferBlocks(resolution),
+      defer,
     };
     const fac = compileDeclareFactory(toFactoryMetadata(meta, FactoryTarget.Component));
     const inputTransformFields = compileInputTransformFields(analysis.inputs);
@@ -1706,10 +1726,12 @@ export class ComponentDecoratorHandler
       ? extractHmrMetatadata(
           node,
           this.reflector,
+          this.evaluator,
           this.compilerHost,
           this.rootDirs,
           def,
           fac,
+          defer,
           classMetadata,
           null,
         )
@@ -1741,10 +1763,11 @@ export class ComponentDecoratorHandler
     // doesn't have information on which dependencies belong to which defer blocks.
     const deferrableTypes = this.canDeferDeps ? analysis.explicitlyDeferredTypes : null;
 
+    const defer = this.compileDeferBlocks(resolution);
     const meta = {
       ...analysis.meta,
       ...resolution,
-      defer: this.compileDeferBlocks(resolution),
+      defer,
     } as R3ComponentMetadata<R3TemplateDependency>;
 
     if (deferrableTypes !== null) {
@@ -1766,10 +1789,12 @@ export class ComponentDecoratorHandler
       ? extractHmrMetatadata(
           node,
           this.reflector,
+          this.evaluator,
           this.compilerHost,
           this.rootDirs,
           def,
           fac,
+          defer,
           classMetadata,
           debugInfo,
         )
@@ -1801,10 +1826,11 @@ export class ComponentDecoratorHandler
 
     // Create a brand-new constant pool since there shouldn't be any constant sharing.
     const pool = new ConstantPool();
+    const defer = this.compileDeferBlocks(resolution);
     const meta: R3ComponentMetadata<R3TemplateDependency> = {
       ...analysis.meta,
       ...resolution,
-      defer: this.compileDeferBlocks(resolution),
+      defer,
     };
     const fac = compileNgFactoryDefField(toFactoryMetadata(meta, FactoryTarget.Component));
     const def = compileComponentFromMetadata(meta, pool, makeBindingParser());
@@ -1820,10 +1846,12 @@ export class ComponentDecoratorHandler
       ? extractHmrMetatadata(
           node,
           this.reflector,
+          this.evaluator,
           this.compilerHost,
           this.rootDirs,
           def,
           fac,
+          defer,
           classMetadata,
           debugInfo,
         )
@@ -1860,22 +1888,32 @@ export class ComponentDecoratorHandler
   private resolveAllDeferredDependencies(
     resolution: Readonly<ComponentResolutionData>,
   ): R3DeferPerComponentDependency[] {
+    const seenDeps = new Set<ClassDeclaration>();
     const deferrableTypes: R3DeferPerComponentDependency[] = [];
     // Go over all dependencies of all defer blocks and update the value of
     // the `isDeferrable` flag and the `importPath` to reflect the current
     // state after visiting all components during the `resolve` phase.
     for (const [_, deps] of resolution.deferPerBlockDependencies) {
       for (const deferBlockDep of deps) {
-        const importDecl =
-          resolution.deferrableDeclToImportDecl.get(deferBlockDep.declaration.node) ?? null;
+        const node = deferBlockDep.declaration.node;
+        const importDecl = resolution.deferrableDeclToImportDecl.get(node) ?? null;
         if (importDecl !== null && this.deferredSymbolTracker.canDefer(importDecl)) {
           deferBlockDep.isDeferrable = true;
           deferBlockDep.importPath = (importDecl.moduleSpecifier as ts.StringLiteral).text;
           deferBlockDep.isDefaultImport = isDefaultImport(importDecl);
-          deferrableTypes.push(deferBlockDep as R3DeferPerComponentDependency);
+
+          // The same dependency may be used across multiple deferred blocks. De-duplicate it
+          // because it can throw off other logic further down the compilation pipeline.
+          // Note that the logic above needs to run even if the dependency is seen before,
+          // because the object literals are different between each block.
+          if (!seenDeps.has(node)) {
+            seenDeps.add(node);
+            deferrableTypes.push(deferBlockDep as R3DeferPerComponentDependency);
+          }
         }
       }
     }
+
     return deferrableTypes;
   }
 

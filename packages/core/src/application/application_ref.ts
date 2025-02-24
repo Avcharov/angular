@@ -41,12 +41,13 @@ import {publishDefaultGlobalUtils as _publishDefaultGlobalUtils} from '../render
 import {requiresRefreshOrTraversal} from '../render3/util/view_utils';
 import {ViewRef as InternalViewRef} from '../render3/view_ref';
 import {TESTABILITY} from '../testability/testability';
-import {isPromise} from '../util/lang';
 import {NgZone} from '../zone/ng_zone';
 
+import {profiler} from '../render3/profiler';
+import {ProfilerEvent} from '../render3/profiler_types';
+import {EffectScheduler} from '../render3/reactivity/root_effect_scheduler';
 import {ApplicationInitStatus} from './application_init';
 import {TracingAction, TracingService, TracingSnapshot} from './tracing';
-import {EffectScheduler} from '../render3/reactivity/root_effect_scheduler';
 
 /**
  * A DI token that provides a set of callbacks to
@@ -114,7 +115,7 @@ export interface BootstrapOptions {
    * Optionally specify coalescing event change detections or not.
    * Consider the following case.
    *
-   * ```
+   * ```html
    * <div (click)="doSomething()">
    *   <button (click)="doSomethingElse()"></button>
    * </div>
@@ -138,7 +139,7 @@ export interface BootstrapOptions {
    * into a single change detection.
    *
    * Consider the following case.
-   * ```
+   * ```ts
    * for (let i = 0; i < 10; i ++) {
    *   ngZone.run(() => {
    *     // do something
@@ -175,29 +176,6 @@ export interface BootstrapOptions {
 
 /** Maximum number of times ApplicationRef will refresh all attached views in a single tick. */
 const MAXIMUM_REFRESH_RERUNS = 10;
-
-export function _callAndReportToErrorHandler(
-  errorHandler: ErrorHandler,
-  ngZone: NgZone,
-  callback: () => any,
-): any {
-  try {
-    const result = callback();
-    if (isPromise(result)) {
-      return result.catch((e: any) => {
-        ngZone.runOutsideAngular(() => errorHandler.handleError(e));
-        // rethrow as the exception handler might not do it
-        throw e;
-      });
-    }
-
-    return result;
-  } catch (e) {
-    ngZone.runOutsideAngular(() => errorHandler.handleError(e));
-    // rethrow as the exception handler might not do it
-    throw e;
-  }
-}
 
 export function optionsReducer<T extends Object>(dst: T, objs: T | T[]): T {
   if (Array.isArray(objs)) {
@@ -320,13 +298,6 @@ export class ApplicationRef {
    * @internal
    */
   dirtyFlags = ApplicationRefDirtyFlags.None;
-
-  /**
-   * Like `dirtyFlags` but don't cause `tick()` to loop.
-   *
-   * @internal
-   */
-  deferredDirtyFlags = ApplicationRefDirtyFlags.None;
 
   /**
    * Most recent snapshot from the `TracingService`, if any.
@@ -531,7 +502,9 @@ export class ApplicationRef {
     componentOrFactory: ComponentFactory<C> | Type<C>,
     rootSelectorOrNode?: string | any,
   ): ComponentRef<C> {
-    (typeof ngDevMode === 'undefined' || ngDevMode) && this.warnIfDestroyed();
+    profiler(ProfilerEvent.BootstrapComponentStart);
+
+    (typeof ngDevMode === 'undefined' || ngDevMode) && warnIfDestroyed(this._destroyed);
     const isComponentFactory = componentOrFactory instanceof ComponentFactory;
     const initStatus = this._injector.get(ApplicationInitStatus);
 
@@ -576,6 +549,9 @@ export class ApplicationRef {
       const _console = this._injector.get(Console);
       _console.log(`Angular is running in development mode.`);
     }
+
+    profiler(ProfilerEvent.BootstrapComponentEnd, compRef);
+
     return compRef;
   }
 
@@ -597,20 +573,21 @@ export class ApplicationRef {
   }
 
   /** @internal */
-  _tick = (): void => {
-    if (this.tracingSnapshot !== null) {
-      const snapshot = this.tracingSnapshot;
-      this.tracingSnapshot = null;
+  _tick(): void {
+    profiler(ProfilerEvent.ChangeDetectionStart);
 
-      // Ensure we always run `_tick()` in the context of the most recent snapshot,
+    if (this.tracingSnapshot !== null) {
+      // Ensure we always run `tickImpl()` in the context of the most recent snapshot,
       // if one exists. Snapshots may be reference counted by the implementation so
       // we want to ensure that if we request a snapshot that we use it.
-      snapshot.run(TracingAction.CHANGE_DETECTION, this._tick);
-      snapshot.dispose();
-      return;
+      this.tracingSnapshot.run(TracingAction.CHANGE_DETECTION, this.tickImpl);
+    } else {
+      this.tickImpl();
     }
+  }
 
-    (typeof ngDevMode === 'undefined' || ngDevMode) && this.warnIfDestroyed();
+  private tickImpl = (): void => {
+    (typeof ngDevMode === 'undefined' || ngDevMode) && warnIfDestroyed(this._destroyed);
     if (this._runningTick) {
       throw new RuntimeError(
         RuntimeErrorCode.RECURSIVE_APPLICATION_REF_TICK,
@@ -622,7 +599,6 @@ export class ApplicationRef {
     try {
       this._runningTick = true;
       this.synchronize();
-
       if (typeof ngDevMode === 'undefined' || ngDevMode) {
         for (let view of this.allViews) {
           view.checkNoChanges();
@@ -633,8 +609,12 @@ export class ApplicationRef {
       this.internalErrorHandler(e);
     } finally {
       this._runningTick = false;
+      this.tracingSnapshot?.dispose();
+      this.tracingSnapshot = null;
       setActiveConsumer(prevConsumer);
       this.afterTick.next();
+
+      profiler(ProfilerEvent.ChangeDetectionEnd);
     }
   };
 
@@ -647,13 +627,11 @@ export class ApplicationRef {
       this._rendererFactory = this._injector.get(RendererFactory2, null, {optional: true});
     }
 
-    // When beginning synchronization, all deferred dirtiness becomes active dirtiness.
-    this.dirtyFlags |= this.deferredDirtyFlags;
-    this.deferredDirtyFlags = ApplicationRefDirtyFlags.None;
-
     let runs = 0;
     while (this.dirtyFlags !== ApplicationRefDirtyFlags.None && runs++ < MAXIMUM_REFRESH_RERUNS) {
+      profiler(ProfilerEvent.ChangeDetectionSyncStart);
       this.synchronizeOnce();
+      profiler(ProfilerEvent.ChangeDetectionSyncEnd);
     }
 
     if ((typeof ngDevMode === 'undefined' || ngDevMode) && runs >= MAXIMUM_REFRESH_RERUNS) {
@@ -671,10 +649,6 @@ export class ApplicationRef {
    * Perform a single synchronization pass.
    */
   private synchronizeOnce(): void {
-    // If we happened to loop, deferred dirtiness can be processed as active dirtiness again.
-    this.dirtyFlags |= this.deferredDirtyFlags;
-    this.deferredDirtyFlags = ApplicationRefDirtyFlags.None;
-
     // First, process any dirty root effects.
     if (this.dirtyFlags & ApplicationRefDirtyFlags.RootEffects) {
       this.dirtyFlags &= ~ApplicationRefDirtyFlags.RootEffects;
@@ -768,7 +742,7 @@ export class ApplicationRef {
    * This will throw if the view is already attached to a ViewContainer.
    */
   attachView(viewRef: ViewRef): void {
-    (typeof ngDevMode === 'undefined' || ngDevMode) && this.warnIfDestroyed();
+    (typeof ngDevMode === 'undefined' || ngDevMode) && warnIfDestroyed(this._destroyed);
     const view = viewRef as InternalViewRef<unknown>;
     this._views.push(view);
     view.attachToAppRef(this);
@@ -778,7 +752,7 @@ export class ApplicationRef {
    * Detaches a view from dirty checking again.
    */
   detachView(viewRef: ViewRef): void {
-    (typeof ngDevMode === 'undefined' || ngDevMode) && this.warnIfDestroyed();
+    (typeof ngDevMode === 'undefined' || ngDevMode) && warnIfDestroyed(this._destroyed);
     const view = viewRef as InternalViewRef<unknown>;
     remove(this._views, view);
     view.detachFromAppRef();
@@ -829,7 +803,7 @@ export class ApplicationRef {
    * @returns A function which unregisters a listener.
    */
   onDestroy(callback: () => void): VoidFunction {
-    (typeof ngDevMode === 'undefined' || ngDevMode) && this.warnIfDestroyed();
+    (typeof ngDevMode === 'undefined' || ngDevMode) && warnIfDestroyed(this._destroyed);
     this._destroyListeners.push(callback);
     return () => remove(this._destroyListeners, callback);
   }
@@ -863,16 +837,16 @@ export class ApplicationRef {
   get viewCount() {
     return this._views.length;
   }
+}
 
-  private warnIfDestroyed() {
-    if ((typeof ngDevMode === 'undefined' || ngDevMode) && this._destroyed) {
-      console.warn(
-        formatRuntimeError(
-          RuntimeErrorCode.APPLICATION_REF_ALREADY_DESTROYED,
-          'This instance of the `ApplicationRef` has already been destroyed.',
-        ),
-      );
-    }
+function warnIfDestroyed(destroyed: boolean): void {
+  if (destroyed) {
+    console.warn(
+      formatRuntimeError(
+        RuntimeErrorCode.APPLICATION_REF_ALREADY_DESTROYED,
+        'This instance of the `ApplicationRef` has already been destroyed.',
+      ),
+    );
   }
 }
 

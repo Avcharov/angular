@@ -759,8 +759,6 @@ export abstract class AbstractControl<TValue = any, TRawValue extends TValue = T
    * accessing a value of a parent control (using the `value` property) from the callback of this
    * event might result in getting a value that has not been updated yet. Subscribe to the
    * `valueChanges` event of the parent control instead.
-   *
-   * TODO: this should be piped from events() but is breaking in G3
    */
   public readonly valueChanges!: Observable<TValue>;
 
@@ -770,8 +768,6 @@ export abstract class AbstractControl<TValue = any, TRawValue extends TValue = T
    *
    * @see {@link FormControlStatus}
    * @see {@link AbstractControl.status}
-   *
-   * TODO: this should be piped from events() but is breaking in G3
    */
   public readonly statusChanges!: Observable<FormControlStatus>;
 
@@ -1430,7 +1426,7 @@ export abstract class AbstractControl<TValue = any, TRawValue extends TValue = T
    *
    * ### Manually set the errors for a control
    *
-   * ```
+   * ```ts
    * const login = new FormControl('someLogin');
    * login.setErrors({
    *   notUnique: true
@@ -1532,7 +1528,7 @@ export abstract class AbstractControl<TValue = any, TRawValue extends TValue = T
    * @usageNotes
    * For example, for the following `FormGroup`:
    *
-   * ```
+   * ```ts
    * form = new FormGroup({
    *   address: new FormGroup({ street: new FormControl() })
    * });
@@ -1564,7 +1560,7 @@ export abstract class AbstractControl<TValue = any, TRawValue extends TValue = T
    * @usageNotes
    * For example, for the following `FormGroup`:
    *
-   * ```
+   * ```ts
    * form = new FormGroup({
    *   address: new FormGroup({ street: new FormControl() })
    * });
@@ -1626,6 +1622,7 @@ export abstract class AbstractControl<TValue = any, TRawValue extends TValue = T
 
   /** @internal */
   _initObservables() {
+    // TODO: this should be piped from events() but is breaking in G3
     (this as Writable<this>).valueChanges = new EventEmitter();
     (this as Writable<this>).statusChanges = new EventEmitter();
   }

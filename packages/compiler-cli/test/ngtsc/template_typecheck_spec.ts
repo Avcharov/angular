@@ -657,6 +657,34 @@ runInEachFileSystem(() => {
       );
     });
 
+    it('should be able to cast to any in a two-way binding', () => {
+      env.tsconfig({strictTemplates: true, _checkTwoWayBoundEvents: true});
+      env.write(
+        'test.ts',
+        `
+        import {Component, Directive, Input, Output, EventEmitter} from '@angular/core';
+
+        @Directive({selector: '[dir]', standalone: true})
+        export class Dir {
+          @Input() val!: number;
+          @Output() valChange = new EventEmitter<number>();
+        }
+
+        @Component({
+          template: '<input dir [(val)]="$any(invalidType)">',
+          standalone: true,
+          imports: [Dir],
+        })
+        export class FooCmp {
+          invalidType = 'hello';
+        }
+      `,
+      );
+
+      const diags = env.driveDiagnostics();
+      expect(diags.length).toBe(0);
+    });
+
     it('should type check a two-way binding to input/output pair where the input has a wider type than the output', () => {
       env.tsconfig({strictTemplates: true, _checkTwoWayBoundEvents: true});
       env.write(
@@ -3322,6 +3350,58 @@ runInEachFileSystem(() => {
       );
       const diags = env.driveDiagnostics();
       expect(diags.length).toBe(0);
+    });
+
+    describe('template literals', () => {
+      it('should treat template literals as strings', () => {
+        env.write(
+          'test.ts',
+          `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: 'Result: {{getValue(\`foo\`)}}',
+            standalone: true,
+          })
+          export class Main {
+            getValue(value: number) {
+              return value;
+            }
+          }
+        `,
+        );
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(1);
+        expect(diags[0].messageText).toBe(
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`,
+        );
+      });
+
+      it('should check interpolations inside template literals', () => {
+        env.write(
+          'test.ts',
+          `
+          import {Component} from '@angular/core';
+
+          @Component({
+            template: '{{\`Hello \${getName(123)}\`}}',
+            standalone: true,
+          })
+          export class Main {
+            getName(value: string) {
+              return value;
+            }
+          }
+        `,
+        );
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(1);
+        expect(diags[0].messageText).toBe(
+          `Argument of type 'number' is not assignable to parameter of type 'string'.`,
+        );
+      });
     });
 
     describe('legacy schema checking with the DOM schema', () => {

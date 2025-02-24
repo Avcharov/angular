@@ -145,6 +145,14 @@ describe('type check blocks', () => {
     expect(tcb(TEMPLATE)).toContain('_t2(1)');
   });
 
+  it('should handle template literals', () => {
+    expect(tcb('{{ `hello world` }}')).toContain('"" + (`hello world`);');
+    expect(tcb('{{ `hello \\${name}!!!` }}')).toContain('"" + (`hello \\${name}!!!`);');
+    expect(tcb('{{ `${a} - ${b} - ${c}` }}')).toContain(
+      '"" + (`${((this).a)} - ${((this).b)} - ${((this).c)}`);',
+    );
+  });
+
   describe('type constructors', () => {
     it('should handle missing property bindings', () => {
       const TEMPLATE = `<div dir [inputA]="foo"></div>`;
@@ -925,6 +933,24 @@ describe('type check blocks', () => {
       expect(block).toContain(
         '_t1.addEventListener("event", ($event): any => { (this).foo(($event as any)); });',
       );
+    });
+
+    it('should handle $any cast in a two-way binding', () => {
+      const TEMPLATE = `<div twoWay [(input)]="$any(value)"></div>`;
+      const DIRECTIVES: TestDeclaration[] = [
+        {
+          type: 'directive',
+          name: 'TwoWay',
+          selector: '[twoWay]',
+          inputs: {input: 'input'},
+          outputs: {inputChange: 'inputChange'},
+        },
+      ];
+      const block = tcb(TEMPLATE, DIRECTIVES);
+      expect(block).toContain('var _t1 = null! as i0.TwoWay;');
+      expect(block).toContain('_t1.input = i1.ɵunwrapWritableSignal(((((this).value) as any)));');
+      expect(block).toContain('var _t2 = i1.ɵunwrapWritableSignal((((this).value) as any));');
+      expect(block).toContain('_t2 = $event;');
     });
 
     it('should detect writes to template variables', () => {

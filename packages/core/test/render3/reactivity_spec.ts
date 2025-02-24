@@ -16,7 +16,6 @@ import {
   computed,
   ContentChildren,
   createComponent,
-  createEnvironmentInjector,
   destroyPlatform,
   Directive,
   effect,
@@ -37,8 +36,7 @@ import {
   ViewContainerRef,
 } from '@angular/core';
 import {SIGNAL} from '@angular/core/primitives/signals';
-import {takeUntilDestroyed, toObservable} from '@angular/core/rxjs-interop';
-import {createInjector} from '@angular/core/src/di/create_injector';
+import {toObservable} from '@angular/core/rxjs-interop';
 import {
   EffectNode,
   setUseMicrotaskEffectsByDefault,
@@ -46,7 +44,6 @@ import {
 import {TestBed} from '@angular/core/testing';
 import {bootstrapApplication} from '@angular/platform-browser';
 import {withBody} from '@angular/private/testing';
-import {filter, firstValueFrom, map} from 'rxjs';
 
 describe('reactivity', () => {
   let prev: boolean;
@@ -65,7 +62,6 @@ describe('reactivity', () => {
         const log: string[] = [];
         @Component({
           selector: 'test-cmp',
-          standalone: true,
           template: '',
         })
         class Cmp {
@@ -175,7 +171,6 @@ describe('reactivity', () => {
 
       @Component({
         selector: 'test-cmp',
-        standalone: true,
         template: '',
       })
       class Cmp {
@@ -211,7 +206,6 @@ describe('reactivity', () => {
 
       @Component({
         selector: 'test-cmp',
-        standalone: true,
         template: '',
       })
       class Cmp implements AfterViewInit {
@@ -267,7 +261,6 @@ describe('reactivity', () => {
       const log: number[] = [];
 
       @Component({
-        standalone: true,
         template: '',
       })
       class TestCmp {
@@ -294,7 +287,6 @@ describe('reactivity', () => {
 
       const source = signal('');
       @Component({
-        standalone: true,
         changeDetection: ChangeDetectionStrategy.OnPush,
         template: '{{ data }}',
       })
@@ -338,7 +330,6 @@ describe('reactivity', () => {
       }
 
       @Component({
-        standalone: true,
         changeDetection: ChangeDetectionStrategy.OnPush,
         providers: [Service],
         template: '{{ service.data }}',
@@ -364,7 +355,6 @@ describe('reactivity', () => {
       const source = signal('');
 
       @Directive({
-        standalone: true,
         selector: '[dir]',
       })
       class Dir {
@@ -385,7 +375,6 @@ describe('reactivity', () => {
       }
 
       @Component({
-        standalone: true,
         imports: [Dir],
         template: `<ng-template dir let-data>{{data}}</ng-template>`,
         changeDetection: ChangeDetectionStrategy.OnPush,
@@ -408,7 +397,6 @@ describe('reactivity', () => {
         const log: number[] = [];
 
         @Component({
-          standalone: true,
           template: '',
         })
         class TestCmp {
@@ -432,9 +420,7 @@ describe('reactivity', () => {
 
       it('should destroy effects when the parent component is destroyed', () => {
         let destroyed = false;
-        @Component({
-          standalone: true,
-        })
+        @Component({})
         class TestCmp {
           constructor() {
             effect((onCleanup) => onCleanup(() => (destroyed = true)));
@@ -450,9 +436,7 @@ describe('reactivity', () => {
 
       it('should destroy effects when their view is destroyed, separately from DestroyRef', () => {
         let destroyed = false;
-        @Component({
-          standalone: true,
-        })
+        @Component({})
         class TestCmp {
           readonly injector = Injector.create({providers: [], parent: inject(Injector)});
 
@@ -470,9 +454,7 @@ describe('reactivity', () => {
 
       it('should destroy effects when their DestroyRef is separately destroyed', () => {
         let destroyed = false;
-        @Component({
-          standalone: true,
-        })
+        @Component({})
         class TestCmp {
           readonly injector = Injector.create({providers: [], parent: inject(Injector)});
 
@@ -486,6 +468,53 @@ describe('reactivity', () => {
 
         (fix.componentInstance.injector as Injector & {destroy(): void}).destroy();
         expect(destroyed).toBeTrue();
+      });
+
+      it('should not run root effects after it has been destroyed', async () => {
+        let effectCounter = 0;
+        const counter = signal(1);
+        const effectRef = TestBed.runInInjectionContext(() =>
+          effect(
+            () => {
+              counter();
+              effectCounter++;
+            },
+            {injector: TestBed.inject(EnvironmentInjector)},
+          ),
+        );
+        expect(effectCounter).toBe(0);
+        effectRef.destroy();
+        TestBed.flushEffects();
+        expect(effectCounter).toBe(0);
+
+        counter.set(2);
+        TestBed.flushEffects();
+        expect(effectCounter).toBe(0);
+      });
+
+      it('should not run view effects after it has been destroyed', async () => {
+        let effectCounter = 0;
+
+        @Component({template: ''})
+        class TestCmp {
+          counter = signal(1);
+          effectRef = effect(() => {
+            this.counter();
+            effectCounter++;
+          });
+        }
+
+        const fixture = TestBed.createComponent(TestCmp);
+        fixture.componentInstance.effectRef.destroy();
+        fixture.detectChanges();
+        expect(effectCounter).toBe(0);
+
+        TestBed.flushEffects();
+        expect(effectCounter).toBe(0);
+
+        fixture.componentInstance.counter.set(2);
+        TestBed.flushEffects();
+        expect(effectCounter).toBe(0);
       });
     });
   });
@@ -502,7 +531,6 @@ describe('reactivity', () => {
     it('should allow writing to signals in ngOnChanges', () => {
       @Component({
         selector: 'with-input',
-        standalone: true,
         template: '{{inSignal()}}',
       })
       class WithInput implements OnChanges {
@@ -518,7 +546,6 @@ describe('reactivity', () => {
 
       @Component({
         selector: 'test-cmp',
-        standalone: true,
         imports: [WithInput],
         template: `<with-input [in]="'A'" />|<with-input [in]="'B'" />`,
       })
@@ -532,7 +559,6 @@ describe('reactivity', () => {
     it('should allow writing to signals in a constructor', () => {
       @Component({
         selector: 'with-constructor',
-        standalone: true,
         template: '{{state()}}',
       })
       class WithConstructor {
@@ -545,7 +571,6 @@ describe('reactivity', () => {
 
       @Component({
         selector: 'test-cmp',
-        standalone: true,
         imports: [WithConstructor],
         template: `<with-constructor />`,
       })
@@ -559,7 +584,6 @@ describe('reactivity', () => {
     it('should allow writing to signals in input setters', () => {
       @Component({
         selector: 'with-input-setter',
-        standalone: true,
         template: '{{state()}}',
       })
       class WithInputSetter {
@@ -573,7 +597,6 @@ describe('reactivity', () => {
 
       @Component({
         selector: 'test-cmp',
-        standalone: true,
         imports: [WithInputSetter],
         template: `
           <with-input-setter [testInput]="'binding'" />|<with-input-setter testInput="static" />
@@ -589,7 +612,6 @@ describe('reactivity', () => {
     it('should allow writing to signals in query result setters', () => {
       @Component({
         selector: 'with-query',
-        standalone: true,
         template: '{{items().length}}',
       })
       class WithQuery {
@@ -603,7 +625,6 @@ describe('reactivity', () => {
 
       @Component({
         selector: 'test-cmp',
-        standalone: true,
         imports: [WithQuery],
         template: `<with-query><div #item></div></with-query>`,
       })
@@ -619,7 +640,6 @@ describe('reactivity', () => {
 
       @Component({
         selector: 'with-query-setter',
-        standalone: true,
         template: '<div #el></div>',
       })
       class WithQuerySetter {
@@ -635,7 +655,6 @@ describe('reactivity', () => {
 
       @Component({
         selector: 'test-cmp',
-        standalone: true,
         template: ``,
       })
       class Cmp {
@@ -668,7 +687,6 @@ describe('reactivity', () => {
     it('should allow toObservable subscription in template (with async pipe)', () => {
       @Component({
         selector: 'test-cmp',
-        standalone: true,
         imports: [AsyncPipe],
         template: '{{counter$ | async}}',
       })
@@ -686,7 +704,6 @@ describe('reactivity', () => {
     it('should assign a debugName to the underlying node for an effect', async () => {
       @Component({
         selector: 'test-cmp',
-        standalone: true,
         template: '',
       })
       class Cmp {
@@ -704,7 +721,6 @@ describe('reactivity', () => {
       it('when created during bootstrapping', () => {
         let log: string[] = [];
         @Component({
-          standalone: true,
           selector: 'test-cmp',
           template: '',
         })
@@ -729,7 +745,6 @@ describe('reactivity', () => {
         let log: string[] = [];
 
         @Component({
-          standalone: true,
           selector: 'test-cmp',
           template: '',
         })
@@ -745,7 +760,6 @@ describe('reactivity', () => {
         }
 
         @Component({
-          standalone: true,
           selector: 'driver-cmp',
           imports: [TestCmp],
           template: `
@@ -771,7 +785,6 @@ describe('reactivity', () => {
       it('when created dynamically', () => {
         let log: string[] = [];
         @Component({
-          standalone: true,
           selector: 'test-cmp',
           template: '',
         })
@@ -787,7 +800,6 @@ describe('reactivity', () => {
         }
 
         @Component({
-          standalone: true,
           selector: 'driver-cmp',
           template: '',
         })
@@ -820,7 +832,6 @@ describe('reactivity', () => {
         }
 
         @Component({
-          standalone: true,
           selector: 'test-cmp',
           template: '',
           providers: [EffectService],
@@ -843,7 +854,6 @@ describe('reactivity', () => {
       it('if multiple effects are created', () => {
         let log: string[] = [];
         @Component({
-          standalone: true,
           selector: 'test-cmp',
           template: '',
         })

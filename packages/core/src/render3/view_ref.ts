@@ -18,7 +18,7 @@ import {collectNativeNodes} from './collect_native_nodes';
 import {checkNoChangesInternal, detectChangesInternal} from './instructions/change_detection';
 import {markViewDirty} from './instructions/mark_view_dirty';
 import {CONTAINER_HEADER_OFFSET, VIEW_REFS} from './interfaces/container';
-import {isLContainer, isRootView} from './interfaces/type_checks';
+import {isDestroyed, isLContainer, isRootView} from './interfaces/type_checks';
 import {
   CONTEXT,
   DECLARATION_LCONTAINER,
@@ -29,19 +29,14 @@ import {
   REACTIVE_TEMPLATE_CONSUMER,
   TVIEW,
 } from './interfaces/view';
-import {
-  destroyLView,
-  detachMovedView,
-  detachView,
-  detachViewFromDOM,
-  trackMovedView,
-} from './node_manipulation';
+import {destroyLView, detachMovedView, detachViewFromDOM} from './node_manipulation';
 import {CheckNoChangesMode} from './state';
 import {
   markViewForRefresh,
   storeLViewOnDestroy,
   updateAncestorTraversalFlagsOnAttach,
 } from './util/view_utils';
+import {detachView, trackMovedView} from './view/container';
 
 // Needed due to tsickle downleveling where multiple `implements` with classes creates
 // multiple @extends in Closure annotations, which is illegal. This workaround fixes
@@ -116,7 +111,7 @@ export class ViewRef<T> implements EmbeddedViewRef<T>, ChangeDetectorRefInterfac
   }
 
   get destroyed(): boolean {
-    return (this._lView[FLAGS] & LViewFlags.Destroyed) === LViewFlags.Destroyed;
+    return isDestroyed(this._lView);
   }
 
   destroy(): void {
