@@ -7,7 +7,7 @@
  */
 
 import {Injector} from '../../di/injector';
-import {ErrorHandler} from '../../error_handler';
+import {ErrorHandler, INTERNAL_APPLICATION_ERROR_HANDLER} from '../../error_handler';
 import {hasSkipHydrationAttrOnRElement} from '../../hydration/skip_hydration';
 import {PRESERVE_HOST_CONTENT, PRESERVE_HOST_CONTENT_DEFAULT} from '../../hydration/tokens';
 import {processTextNodeMarkersBeforeHydration} from '../../hydration/utils';
@@ -96,7 +96,7 @@ export function executeTemplate<T>(
     const preHookType = isUpdatePhase
       ? ProfilerEvent.TemplateUpdateStart
       : ProfilerEvent.TemplateCreateStart;
-    profiler(preHookType, context as unknown as {});
+    profiler(preHookType, context as unknown as {}, templateFn);
     templateFn(rf, context);
   } finally {
     setSelectedIndex(prevSelectedIndex);
@@ -104,7 +104,7 @@ export function executeTemplate<T>(
     const postHookType = isUpdatePhase
       ? ProfilerEvent.TemplateUpdateEnd
       : ProfilerEvent.TemplateCreateEnd;
-    profiler(postHookType, context as unknown as {});
+    profiler(postHookType, context as unknown as {}, templateFn);
   }
 }
 
@@ -607,10 +607,25 @@ export function loadComponentRenderer(
 }
 
 /** Handles an error thrown in an LView. */
+export function handleUncaughtError(lView: LView, error: any): void {
+  const injector = lView[INJECTOR];
+  if (!injector) {
+    return;
+  }
+  const errorHandler = injector.get(INTERNAL_APPLICATION_ERROR_HANDLER, null);
+  errorHandler?.(error);
+}
+
+/**
+ * Handles an error thrown in an LView.
+ * @deprecated Use handleUncaughtError to report to application error handler
+ */
 export function handleError(lView: LView, error: any): void {
   const injector = lView[INJECTOR];
-  const errorHandler = injector ? injector.get(ErrorHandler, null) : null;
-  errorHandler && errorHandler.handleError(error);
+  if (!injector) {
+    return;
+  }
+  injector.get(ErrorHandler, null)?.handleError(error);
 }
 
 /**
@@ -672,7 +687,7 @@ export function setDirectiveInput(
   lView: LView,
   target: DirectiveDef<unknown>,
   publicName: string,
-  value: string,
+  value: unknown,
 ): boolean {
   let hostIndex: number | null = null;
   let hostDirectivesStart: number | null = null;
@@ -714,7 +729,7 @@ export function setDirectiveInput(
     }
   }
 
-  if (hostIndex !== null) {
+  if (hostIndex !== null && target.inputs.hasOwnProperty(publicName)) {
     ngDevMode && assertIndexInRange(lView, hostIndex);
     writeToDirectiveInput(target, lView[hostIndex], publicName, value);
     hasSet = true;

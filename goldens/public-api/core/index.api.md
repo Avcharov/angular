@@ -295,7 +295,7 @@ export interface ComponentDecorator {
 // @public @deprecated
 export abstract class ComponentFactory<C> {
     abstract get componentType(): Type<any>;
-    abstract create(injector: Injector, projectableNodes?: any[][], rootSelectorOrNode?: string | any, environmentInjector?: EnvironmentInjector | NgModuleRef<any>): ComponentRef<C>;
+    abstract create(injector: Injector, projectableNodes?: any[][], rootSelectorOrNode?: string | any, environmentInjector?: EnvironmentInjector | NgModuleRef<any>, directives?: (Type<unknown> | DirectiveWithBindings<unknown>)[], bindings?: Binding[]): ComponentRef<C>;
     abstract get inputs(): {
         propName: string;
         templateName: string;
@@ -454,6 +454,8 @@ export function createComponent<C>(component: Type<C>, options: {
     hostElement?: Element;
     elementInjector?: Injector;
     projectableNodes?: Node[][];
+    directives?: (Type<unknown> | DirectiveWithBindings<unknown>)[];
+    bindings?: Binding[];
 }): ComponentRef<C>;
 
 // @public
@@ -587,6 +589,12 @@ export class DefaultIterableDiffer<V> implements IterableDiffer<V>, IterableChan
 
 // @public @deprecated (undocumented)
 export const defineInjectable: typeof ɵɵdefineInjectable;
+
+// @public
+export interface DestroyableInjector extends Injector {
+    // (undocumented)
+    destroy(): void;
+}
 
 // @public
 export function destroyPlatform(): void;
@@ -949,7 +957,7 @@ export abstract class Injector {
         providers: Array<Provider | StaticProvider>;
         parent?: Injector;
         name?: string;
-    }): Injector;
+    }): DestroyableInjector;
     abstract get<T>(token: ProviderToken<T>, notFoundValue: undefined, options: InjectOptions & {
         optional?: false;
     }): T;
@@ -987,6 +995,9 @@ export const Input: InputDecorator;
 
 // @public
 export const input: InputFunction;
+
+// @public
+export function inputBinding(publicName: string, value: () => unknown): Binding;
 
 // @public (undocumented)
 export interface InputDecorator {
@@ -1353,6 +1364,9 @@ export const Output: OutputDecorator;
 export function output<T = void>(opts?: OutputOptions): OutputEmitterRef<T>;
 
 // @public
+export function outputBinding<T>(eventName: string, listener: (event: T) => unknown): Binding;
+
+// @public
 export interface OutputDecorator {
     (alias?: string): any;
     // (undocumented)
@@ -1390,7 +1404,7 @@ export const PACKAGE_ROOT_URL: InjectionToken<string>;
 // @public
 export class PendingTasks {
     add(): () => void;
-    run<T>(fn: () => Promise<T>): Promise<T>;
+    run<T>(fn: () => Promise<T>): void;
     // (undocumented)
     static ɵprov: unknown;
 }
@@ -1974,9 +1988,11 @@ export abstract class ViewContainerRef {
         ngModuleRef?: NgModuleRef<unknown>;
         environmentInjector?: EnvironmentInjector | NgModuleRef<unknown>;
         projectableNodes?: Node[][];
+        directives?: (Type<unknown> | DirectiveWithBindings<unknown>)[];
+        bindings?: Binding[];
     }): ComponentRef<C>;
     // @deprecated
-    abstract createComponent<C>(componentFactory: ComponentFactory<C>, index?: number, injector?: Injector, projectableNodes?: any[][], environmentInjector?: EnvironmentInjector | NgModuleRef<any>): ComponentRef<C>;
+    abstract createComponent<C>(componentFactory: ComponentFactory<C>, index?: number, injector?: Injector, projectableNodes?: any[][], environmentInjector?: EnvironmentInjector | NgModuleRef<any>, directives?: (Type<unknown> | DirectiveWithBindings<unknown>)[], bindings?: Binding[]): ComponentRef<C>;
     abstract createEmbeddedView<C>(templateRef: TemplateRef<C>, context?: C, options?: {
         index?: number;
         injector?: Injector;

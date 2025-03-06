@@ -8,15 +8,16 @@ Angular supports a subset of [literal values](https://developer.mozilla.org/en-U
 
 ### Supported value literals
 
-| Literal type    | Example values                  |
-| --------------- | ------------------------------- |
-| String          | `'Hello'`, `"World"`            |
-| Boolean         | `true`, `false`                 |
-| Number          | `123`, `3.14`                   |
-| Object          | `{name: 'Alice'}`               |
-| Array           | `['Onion', 'Cheese', 'Garlic']` |
-| null            | `null`                          |
-| Template string | `` `Hello ${name}` ``           |
+| Literal type           | Example values                  |
+| ---------------------- | ------------------------------- |
+| String                 | `'Hello'`, `"World"`            |
+| Boolean                | `true`, `false`                 |
+| Number                 | `123`, `3.14`                   |
+| Object                 | `{name: 'Alice'}`               |
+| Array                  | `['Onion', 'Cheese', 'Garlic']` |
+| null                   | `null`                          |
+| Template string        | `` `Hello ${name}` ``           |
+| Tagged template string | `` tag`Hello ${name}` ``        |
 
 ### Unsupported literals
 
@@ -71,7 +72,7 @@ Angular expressions additionally also support the following non-standard operato
 
 | Operator                        | Example(s)                     |
 | ------------------------------- | ------------------------------ |
-| [Pipe](/guides/templates/pipes) | `{{ total \| currency }}`      |
+| [Pipe](/guide/templates/pipes) | `{{ total \| currency }}`      |
 | Optional chaining\*             | `someObj.someProp?.nestedProp` |
 | Non-null assertion (TypeScript) | `someObj!.someProp`            |
 

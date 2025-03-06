@@ -19,6 +19,7 @@ import {noSideEffects} from '../util/closure';
 
 import {assertDirectiveDef, assertNodeInjector, assertTNodeForLView} from './assert';
 import {
+  emitInjectorToCreateInstanceEvent,
   emitInstanceCreatedByInjectorEvent,
   InjectorProfilerContext,
   runInInjectorProfilerContext,
@@ -31,7 +32,6 @@ import {registerPreOrderHooks} from './hooks';
 import {AttributeMarker} from './interfaces/attribute_marker';
 import {ComponentDef, DirectiveDef} from './interfaces/definition';
 import {
-  isFactory,
   NO_PARENT_INJECTOR,
   NodeInjectorFactory,
   NodeInjectorOffset,
@@ -521,11 +521,9 @@ function lookupTokenUsingNodeInjector<T>(
           new NodeInjector(getCurrentTNode() as TElementNode, getLView()),
           token as Type<T>,
           () => {
+            emitInjectorToCreateInstanceEvent(token);
             value = bloomHash(flags);
-
-            if (value != null) {
-              emitInstanceCreatedByInjectorEvent(value);
-            }
+            emitInstanceCreatedByInjectorEvent(value);
           },
         );
       } else {
@@ -729,7 +727,7 @@ export function getNodeInjectable(
 ): any {
   let value = lView[index];
   const tData = tView.data;
-  if (isFactory(value)) {
+  if (value instanceof NodeInjectorFactory) {
     const factory: NodeInjectorFactory = value;
     if (factory.resolving) {
       throwCyclicDependencyError(stringifyForError(tData[index]));
@@ -737,14 +735,15 @@ export function getNodeInjectable(
     const previousIncludeViewProviders = setIncludeViewProviders(factory.canSeeViewProviders);
     factory.resolving = true;
 
+    // tData indexes mirror the concrete instances in its corresponding LView.
+    // lView[index] here is either the injectable instance itself or a factory,
+    // therefore tData[index] is the constructor of that injectable or a
+    // definition object that contains the constructor in a `.type` field.
+    const token =
+      (tData[index] as DirectiveDef<unknown> | ComponentDef<unknown>).type || tData[index];
+
     let prevInjectContext: InjectorProfilerContext | undefined;
     if (ngDevMode) {
-      // tData indexes mirror the concrete instances in its corresponding LView.
-      // lView[index] here is either the injectable instace itself or a factory,
-      // therefore tData[index] is the constructor of that injectable or a
-      // definition object that contains the constructor in a `.type` field.
-      const token =
-        (tData[index] as DirectiveDef<unknown> | ComponentDef<unknown>).type || tData[index];
       const injector = new NodeInjector(tNode, lView);
       prevInjectContext = setInjectorProfilerContext({injector, token});
     }
@@ -760,6 +759,8 @@ export function getNodeInjectable(
         "Because flags do not contain `SkipSelf' we expect this to always succeed.",
       );
     try {
+      ngDevMode && emitInjectorToCreateInstanceEvent(token);
+
       value = lView[index] = factory.factory(undefined, tData, lView, tNode);
 
       ngDevMode && emitInstanceCreatedByInjectorEvent(value);

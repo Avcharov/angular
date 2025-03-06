@@ -31,6 +31,7 @@ import {
   SCHEDULE_IN_ROOT_ZONE,
 } from './zoneless_scheduling';
 import {SCHEDULE_IN_ROOT_ZONE_DEFAULT} from './flags';
+import {ErrorHandler, INTERNAL_APPLICATION_ERROR_HANDLER} from '../../error_handler';
 
 @Injectable({providedIn: 'root'})
 export class NgZoneChangeDetectionScheduler {
@@ -124,6 +125,14 @@ export function internalProvideZoneChangeDetection({
       provide: SCHEDULE_IN_ROOT_ZONE,
       useValue: scheduleInRootZone ?? SCHEDULE_IN_ROOT_ZONE_DEFAULT,
     },
+    {
+      provide: INTERNAL_APPLICATION_ERROR_HANDLER,
+      useFactory: () => {
+        const zone = inject(NgZone);
+        const userErrorHandler = inject(ErrorHandler);
+        return (e: unknown) => zone.runOutsideAngular(() => userErrorHandler.handleError(e));
+      },
+    },
   ];
 }
 
@@ -144,7 +153,7 @@ export function internalProvideZoneChangeDetection({
  * ```
  *
  * @publicApi
- * @see {@link bootstrapApplication}
+ * @see {@link /api/core/bootstrapApplication bootstrapApplication}
  * @see {@link NgZoneOptions}
  */
 export function provideZoneChangeDetection(options?: NgZoneOptions): EnvironmentProviders {

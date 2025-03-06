@@ -24,9 +24,18 @@ import {
 } from './interface/injector';
 import {ProviderToken} from './provider_token';
 import type {HostAttributeToken} from './host_attribute_token';
+import {
+  Injector as PrimitivesInjector,
+  NotFound,
+  NOT_FOUND,
+  InjectionToken as PrimitivesInjectionToken,
+  getCurrentInjector,
+} from '@angular/core/primitives/di';
 
 const _THROW_IF_NOT_FOUND = {};
 export const THROW_IF_NOT_FOUND = _THROW_IF_NOT_FOUND;
+
+export {getCurrentInjector, setCurrentInjector} from '@angular/core/primitives/di';
 
 /*
  * Name of a property (that we patch onto DI decorator), which is used as an annotation of which
@@ -35,31 +44,19 @@ export const THROW_IF_NOT_FOUND = _THROW_IF_NOT_FOUND;
  */
 const DI_DECORATOR_FLAG = '__NG_DI_FLAG__';
 
+export class RetrievingInjector implements PrimitivesInjector {
+  constructor(readonly injector: Injector) {}
+  retrieve<T>(token: PrimitivesInjectionToken<T>, options: unknown): T | NotFound {
+    const ngOptions = options as InjectOptions;
+    return this.injector.get(token, ngOptions.optional ? NOT_FOUND : THROW_IF_NOT_FOUND, ngOptions);
+  }
+}
+
 export const NG_TEMP_TOKEN_PATH = 'ngTempTokenPath';
 const NG_TOKEN_PATH = 'ngTokenPath';
 const NEW_LINE = /\n/gm;
 const NO_NEW_LINE = 'ɵ';
 export const SOURCE = '__source';
-
-/**
- * Current injector value used by `inject`.
- * - `undefined`: it is an error to call `inject`
- * - `null`: `inject` can be called but there is no injector (limp-mode).
- * - Injector instance: Use the injector for resolution.
- */
-let _currentInjector: Injector | undefined | null = undefined;
-
-export function getCurrentInjector(): Injector | undefined | null {
-  return _currentInjector;
-}
-
-export function setCurrentInjector(
-  injector: Injector | null | undefined,
-): Injector | undefined | null {
-  const former = _currentInjector;
-  _currentInjector = injector;
-  return former;
-}
 
 export function injectInjectorOnly<T>(token: ProviderToken<T>): T;
 export function injectInjectorOnly<T>(token: ProviderToken<T>, flags?: InjectFlags): T | null;
@@ -67,20 +64,23 @@ export function injectInjectorOnly<T>(
   token: ProviderToken<T>,
   flags = InjectFlags.Default,
 ): T | null {
-  if (_currentInjector === undefined) {
+  if (getCurrentInjector() === undefined) {
     throw new RuntimeError(
       RuntimeErrorCode.MISSING_INJECTION_CONTEXT,
       ngDevMode &&
-        `inject() must be called from an injection context such as a constructor, a factory function, a field initializer, or a function used with \`runInInjectionContext\`.`,
+        `The \`${stringify(token)}\` token injection failed. \`inject()\` function must be called from an injection context such as a constructor, a factory function, a field initializer, or a function used with \`runInInjectionContext\`.`,
     );
-  } else if (_currentInjector === null) {
+  } else if (getCurrentInjector() === null) {
     return injectRootLimpMode(token, undefined, flags);
   } else {
-    const value = _currentInjector.get(
-      token,
-      flags & InjectFlags.Optional ? null : undefined,
-      flags,
-    );
+    const currentInjector = getCurrentInjector();
+    let injector: Injector;
+    if (currentInjector instanceof RetrievingInjector) {
+      injector = currentInjector.injector;
+    } else {
+      injector = currentInjector as unknown as Injector;
+    }
+    const value = injector.get(token, flags & InjectFlags.Optional ? null : undefined, flags);
     ngDevMode && emitInjectEvent(token as Type<unknown>, value, flags);
     return value;
   }
