@@ -23,8 +23,8 @@ import {Injectable} from '../di/injectable';
 import {InjectionToken} from '../di/injection_token';
 import {Injector} from '../di/injector';
 import {EnvironmentInjector, type R3Injector} from '../di/r3_injector';
-import {ErrorHandler, INTERNAL_APPLICATION_ERROR_HANDLER} from '../error_handler';
 import {formatRuntimeError, RuntimeError, RuntimeErrorCode} from '../errors';
+import {ErrorHandler, INTERNAL_APPLICATION_ERROR_HANDLER} from '../error_handler';
 import {Type} from '../interface/type';
 import {ComponentFactory, ComponentRef} from '../linker/component_factory';
 import {ComponentFactoryResolver} from '../linker/component_factory_resolver';
@@ -508,13 +508,15 @@ export class ApplicationRef {
     const initStatus = this._injector.get(ApplicationInitStatus);
 
     if (!initStatus.done) {
-      const standalone = !isComponentFactory && isStandalone(componentOrFactory);
-      const errorMessage =
-        (typeof ngDevMode === 'undefined' || ngDevMode) &&
-        'Cannot bootstrap as there are still asynchronous initializers running.' +
+      let errorMessage = '';
+      if (typeof ngDevMode === 'undefined' || ngDevMode) {
+        const standalone = !isComponentFactory && isStandalone(componentOrFactory);
+        errorMessage =
+          'Cannot bootstrap as there are still asynchronous initializers running.' +
           (standalone
             ? ''
             : ' Bootstrap components in the `ngDoBootstrap` method of the root module.');
+      }
       throw new RuntimeError(RuntimeErrorCode.ASYNC_INITIALIZERS_STILL_RUNNING, errorMessage);
     }
 
@@ -603,9 +605,6 @@ export class ApplicationRef {
           view.checkNoChanges();
         }
       }
-    } catch (e) {
-      // Attention: Don't rethrow as it could cancel subscriptions to Observables!
-      this.internalErrorHandler(e);
     } finally {
       this._runningTick = false;
       this.tracingSnapshot?.dispose();
@@ -754,7 +753,11 @@ export class ApplicationRef {
 
   private _loadComponent(componentRef: ComponentRef<any>): void {
     this.attachView(componentRef.hostView);
-    this.tick();
+    try {
+      this.tick();
+    } catch (e) {
+      this.internalErrorHandler(e);
+    }
     this.components.push(componentRef);
     // Get the listeners lazily to prevent DI cycles.
     const listeners = this._injector.get(APP_BOOTSTRAP_LISTENER, []);

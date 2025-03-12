@@ -16,17 +16,10 @@ import {
   signal,
 } from '@angular/core';
 import {outputFromObservable} from '@angular/core/rxjs-interop';
-import {setUseMicrotaskEffectsByDefault} from '@angular/core/src/render3/reactivity/effect';
 import {TestBed} from '@angular/core/testing';
 import {BehaviorSubject, Observable, share, Subject} from 'rxjs';
 
 describe('output() function', () => {
-  let prev: boolean;
-  beforeEach(() => {
-    prev = setUseMicrotaskEffectsByDefault(false);
-  });
-  afterEach(() => setUseMicrotaskEffectsByDefault(prev));
-
   it('should support emitting values', () => {
     @Directive({
       selector: '[dir]',
@@ -116,7 +109,10 @@ describe('output() function', () => {
     fixture.componentInstance.show = false;
     fixture.detectChanges();
 
-    expect(() => dir.onBla.emit(3)).toThrowError(/Unexpected emit for destroyed `OutputRef`/);
+    fixture.destroy();
+    const warnSpy = spyOn(console, 'warn');
+    dir.onBla.emit(3);
+    expect(warnSpy.calls.mostRecent().args[0]).toMatch(/Unexpected emit for destroyed `OutputRef`/);
   });
 
   it('should error when subscribing to a destroyed output', () => {

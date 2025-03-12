@@ -9,11 +9,15 @@ package(
 )
 
 ts_library(
-    name = "pending-tasks",
+    name = "inject-flags",
     srcs = glob(["**/*.ts"]),
     tsconfig = "//packages/core/schematics:tsconfig.json",
     deps = [
+        "//packages/compiler-cli/private",
+        "//packages/compiler-cli/src/ngtsc/file_system",
         "//packages/core/schematics/utils",
+        "//packages/core/schematics/utils/tsurge",
+        "//packages/core/schematics/utils/tsurge/helpers/angular_devkit",
         "@npm//@angular-devkit/schematics",
         "@npm//@types/node",
         "@npm//typescript",

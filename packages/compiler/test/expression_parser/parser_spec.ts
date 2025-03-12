@@ -18,6 +18,7 @@ import {
   PropertyRead,
   TemplateBinding,
   VariableBinding,
+  TemplateLiteral,
 } from '@angular/compiler/src/expression_parser/ast';
 import {Lexer} from '@angular/compiler/src/expression_parser/lexer';
 import {Parser, SplitInterpolation} from '@angular/compiler/src/expression_parser/parser';
@@ -104,16 +105,16 @@ describe('parser', () => {
 
     it('should parse typeof expression', () => {
       checkAction(`typeof {} === "object"`);
-      checkAction('(!(typeof {} === "number"))', '!typeof {} === "number"');
+      checkAction('(!(typeof {} === "number"))');
     });
 
     it('should parse void expression', () => {
       checkAction(`void 0`);
-      checkAction('(!(void 0))', '!void 0');
+      checkAction('(!(void 0))');
     });
 
     it('should parse grouped expressions', () => {
-      checkAction('(1 + 2) * 3', '1 + 2 * 3');
+      checkAction('(1 + 2) * 3');
     });
 
     it('should ignore comments in expressions', () => {
@@ -364,7 +365,7 @@ describe('parser', () => {
 
         it('should recover on parenthesized empty rvalues', () => {
           const ast = parseAction('(a[1] = b) = c = d');
-          expect(unparse(ast)).toEqual('a[1] = b');
+          expect(unparse(ast)).toEqual('(a[1] = b)');
           validate(ast);
 
           expect(ast.errors.length).toBe(1);
@@ -444,7 +445,7 @@ describe('parser', () => {
 
       it('should parse template literals with pipes inside interpolations', () => {
         checkBinding('`hello ${name | capitalize}!!!`', '`hello ${(name | capitalize)}!!!`');
-        checkBinding('`hello ${(name | capitalize)}!!!`');
+        checkBinding('`hello ${(name | capitalize)}!!!`', '`hello ${((name | capitalize))}!!!`');
       });
 
       it('should report error if interpolation is empty', () => {
@@ -459,7 +460,7 @@ describe('parser', () => {
         checkBinding('tags.first`hello!`');
         checkBinding('tags[0]`hello!`');
         checkBinding('tag()`hello!`');
-        checkBinding('(tag ?? otherTag)`hello!`', 'tag ?? otherTag`hello!`');
+        checkBinding('(tag ?? otherTag)`hello!`');
         checkBinding('tag!`hello!`');
       });
 
@@ -468,7 +469,7 @@ describe('parser', () => {
         checkBinding('tags.first`hello ${name}!`');
         checkBinding('tags[0]`hello ${name}!`');
         checkBinding('tag()`hello ${name}!`');
-        checkBinding('(tag ?? otherTag)`hello ${name}!`', 'tag ?? otherTag`hello ${name}!`');
+        checkBinding('(tag ?? otherTag)`hello ${name}!`');
         checkBinding('tag!`hello ${name}!`');
       });
 
@@ -528,18 +529,34 @@ describe('parser', () => {
       expect(unparseWithSpan(ast)).toContain(['a.b = c', '[nameSpan] b']);
     });
 
-    it('should record template literal space', () => {
+    it('should record spans for untagged template literals with no interpolations', () => {
+      const ast = parseAction('`hello world`');
+      const unparsed = unparseWithSpan(ast);
+      expect(unparsed).toEqual([
+        ['`hello world`', '`hello world`'],
+        ['hello world', '`hello world`'],
+      ]);
+    });
+
+    it('should record spans for untagged template literals with interpolations', () => {
       const ast = parseAction('`before ${one} - ${two} - ${three} after`');
       const unparsed = unparseWithSpan(ast);
-      expect(unparsed).toContain(['before ', '']);
-      expect(unparsed).toContain(['one', 'one']);
-      expect(unparsed).toContain(['one', '[nameSpan] one']);
-      expect(unparsed).toContain([' - ', '']);
-      expect(unparsed).toContain(['two', 'two']);
-      expect(unparsed).toContain(['two', '[nameSpan] two']);
-      expect(unparsed).toContain(['three', 'three']);
-      expect(unparsed).toContain(['three', '[nameSpan] three']);
-      expect(unparsed).toContain([' after', '']);
+      expect(unparsed).toEqual([
+        ['`before ${one} - ${two} - ${three} after`', '`before ${one} - ${two} - ${three} after`'],
+        ['before ', '`before '],
+        ['one', 'one'],
+        ['one', '[nameSpan] one'],
+        ['', ''], // Implicit receiver
+        [' - ', ' - '],
+        ['two', 'two'],
+        ['two', '[nameSpan] two'],
+        ['', ''], // Implicit receiver
+        [' - ', ' - '],
+        ['three', 'three'],
+        ['three', '[nameSpan] three'],
+        ['', ''], // Implicit receiver
+        [' after', ' after`'],
+      ]);
     });
 
     it('should record spans for tagged template literal with no interpolations', () => {
@@ -549,9 +566,9 @@ describe('parser', () => {
         ['tag`text`', 'tag`text`'],
         ['tag', 'tag'],
         ['tag', '[nameSpan] tag'],
-        ['', ''],
-        ['`text`', ''],
-        ['text', ''],
+        ['', ''], // Implicit receiver
+        ['`text`', '`text`'],
+        ['text', '`text`'],
       ]);
     });
 
@@ -565,21 +582,21 @@ describe('parser', () => {
         ],
         ['tag', 'tag'],
         ['tag', '[nameSpan] tag'],
-        ['', ''],
+        ['', ''], // Implicit receiver
         ['`before ${one} - ${two} - ${three} after`', '`before ${one} - ${two} - ${three} after`'],
-        ['before ', ''],
+        ['before ', '`before '],
         ['one', 'one'],
         ['one', '[nameSpan] one'],
-        ['', ''],
-        [' - ', ''],
+        ['', ''], // Implicit receiver
+        [' - ', ' - '],
         ['two', 'two'],
         ['two', '[nameSpan] two'],
-        ['', ''],
-        [' - ', ''],
+        ['', ''], // Implicit receiver
+        [' - ', ' - '],
         ['three', 'three'],
         ['three', '[nameSpan] three'],
-        ['', ''],
-        [' after', ''],
+        ['', ''], // Implicit receiver
+        [' after', ' after`'],
       ]);
     });
 
@@ -642,7 +659,7 @@ describe('parser', () => {
         checkBinding('a?.b | c', '(a?.b | c)');
         checkBinding('true | a', '(true | a)');
         checkBinding('a | b:c | d', '((a | b:c) | d)');
-        checkBinding('a | b:(c | d)', '(a | b:(c | d))');
+        checkBinding('a | b:(c | d)', '(a | b:((c | d)))');
       });
 
       describe('should parse incomplete pipes', () => {
@@ -680,7 +697,7 @@ describe('parser', () => {
           [
             'should parse incomplete pipe args',
             'a | b: (a | ) + | c',
-            '((a | b:(a | ) + ) | c)',
+            '((a | b:((a | )) + ) | c)',
             'Unexpected token |',
           ],
         ];
@@ -1319,9 +1336,9 @@ describe('parser', () => {
       const expr = validate(parseAction(text));
       expect(unparse(expr)).toEqual(expected || text);
     }
-    it('should be able to recover from an extra paren', () => recover('((a)))', 'a'));
+    it('should be able to recover from an extra paren', () => recover('((a)))', '((a))'));
     it('should be able to recover from an extra bracket', () => recover('[[a]]]', '[[a]]'));
-    it('should be able to recover from a missing )', () => recover('(a;b', 'a; b;'));
+    it('should be able to recover from a missing )', () => recover('(a;b', '(a); b;'));
     it('should be able to recover from a missing ]', () => recover('[a,b', '[a, b]'));
     it('should be able to recover from a missing selector', () => recover('a.'));
     it('should be able to recover from a missing selector in a array literal', () =>

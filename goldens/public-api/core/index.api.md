@@ -4,7 +4,7 @@
 
 ```ts
 
-import { EnvironmentProviders as EnvironmentProviders_2 } from '@angular/core';
+import * as _angular_core from '@angular/core';
 import { Observable } from 'rxjs';
 import { SIGNAL } from '@angular/core/primitives/signals';
 import { SignalNode } from '@angular/core/primitives/signals';
@@ -116,20 +116,20 @@ export class ApplicationInitStatus {
     // (undocumented)
     readonly donePromise: Promise<any>;
     // (undocumented)
-    static ɵfac: i0.ɵɵFactoryDeclaration<ApplicationInitStatus, never>;
+    static ɵfac: ɵɵFactoryDeclaration<ApplicationInitStatus, never>;
     // (undocumented)
-    static ɵprov: i0.ɵɵInjectableDeclaration<ApplicationInitStatus>;
+    static ɵprov: ɵɵInjectableDeclaration<ApplicationInitStatus>;
 }
 
 // @public
 export class ApplicationModule {
     constructor(appRef: ApplicationRef);
     // (undocumented)
-    static ɵfac: i0.ɵɵFactoryDeclaration<ApplicationModule, never>;
+    static ɵfac: ɵɵFactoryDeclaration<ApplicationModule, never>;
     // (undocumented)
-    static ɵinj: i0.ɵɵInjectorDeclaration<ApplicationModule>;
+    static ɵinj: ɵɵInjectorDeclaration<ApplicationModule>;
     // (undocumented)
-    static ɵmod: i0.ɵɵNgModuleDeclaration<ApplicationModule, never, never, never>;
+    static ɵmod: ɵɵNgModuleDeclaration<ApplicationModule, never, never, never>;
 }
 
 // @public
@@ -152,9 +152,9 @@ export class ApplicationRef {
     // (undocumented)
     whenStable(): Promise<void>;
     // (undocumented)
-    static ɵfac: i0.ɵɵFactoryDeclaration<ApplicationRef, never>;
+    static ɵfac: ɵɵFactoryDeclaration<ApplicationRef, never>;
     // (undocumented)
-    static ɵprov: i0.ɵɵInjectableDeclaration<ApplicationRef>;
+    static ɵprov: ɵɵInjectableDeclaration<ApplicationRef>;
 }
 
 // @public (undocumented)
@@ -241,9 +241,9 @@ export class Compiler {
     compileModuleSync<T>(moduleType: Type<T>): NgModuleFactory<T>;
     getModuleId(moduleType: Type<any>): string | undefined;
     // (undocumented)
-    static ɵfac: i0.ɵɵFactoryDeclaration<Compiler, never>;
+    static ɵfac: ɵɵFactoryDeclaration<Compiler, never>;
     // (undocumented)
-    static ɵprov: i0.ɵɵInjectableDeclaration<Compiler>;
+    static ɵprov: ɵɵInjectableDeclaration<Compiler>;
 }
 
 // @public
@@ -692,10 +692,8 @@ export abstract class EnvironmentInjector implements Injector {
     }): T;
     abstract get<T>(token: ProviderToken<T>, notFoundValue: null | undefined, options: InjectOptions): T | null;
     abstract get<T>(token: ProviderToken<T>, notFoundValue?: T, options?: InjectOptions): T;
-    // @deprecated
-    abstract get<T>(token: ProviderToken<T>, notFoundValue?: T, flags?: InjectFlags): T;
     // @deprecated (undocumented)
-    abstract get(token: any, notFoundValue?: any): any;
+    abstract get<T>(token: string | ProviderToken<T>, notFoundValue?: any): any;
     // @deprecated
     abstract runInContext<ReturnT>(fn: () => ReturnT): ReturnT;
 }
@@ -853,9 +851,6 @@ export const Inject: InjectDecorator;
 // @public (undocumented)
 export function inject<T>(token: ProviderToken<T>): T;
 
-// @public @deprecated (undocumented)
-export function inject<T>(token: ProviderToken<T>, flags?: InjectFlags): T | null;
-
 // @public (undocumented)
 export function inject<T>(token: ProviderToken<T>, options: InjectOptions & {
     optional?: false;
@@ -915,15 +910,6 @@ export interface InjectDecorator {
     new (token: any): Inject;
 }
 
-// @public @deprecated
-export enum InjectFlags {
-    Default = 0,
-    Host = 1,
-    Optional = 8,
-    Self = 2,
-    SkipSelf = 4
-}
-
 // @public
 export class InjectionToken<T> {
     constructor(_desc: string, options?: {
@@ -962,11 +948,9 @@ export abstract class Injector {
         optional?: false;
     }): T;
     abstract get<T>(token: ProviderToken<T>, notFoundValue: null | undefined, options: InjectOptions): T | null;
-    abstract get<T>(token: ProviderToken<T>, notFoundValue?: T, options?: InjectOptions | InjectFlags): T;
-    // @deprecated
-    abstract get<T>(token: ProviderToken<T>, notFoundValue?: T, flags?: InjectFlags): T;
+    abstract get<T>(token: ProviderToken<T>, notFoundValue?: T, options?: InjectOptions): T;
     // @deprecated (undocumented)
-    abstract get(token: any, notFoundValue?: any): any;
+    abstract get<T>(token: string | ProviderToken<T>, notFoundValue?: any): any;
     // (undocumented)
     static NULL: Injector;
     // (undocumented)
@@ -1045,7 +1029,7 @@ export interface InputSignalWithTransform<T, TransformT> extends Signal<T> {
     // (undocumented)
     [ɵINPUT_SIGNAL_BRAND_WRITE_TYPE]: TransformT;
     // (undocumented)
-    [SIGNAL]: ɵInputSignalNode<T, TransformT>;
+    [SIGNAL]: InputSignalNode<T, TransformT>;
 }
 
 // @public
@@ -1212,7 +1196,7 @@ export interface ModelOptions {
 // @public
 export interface ModelSignal<T> extends WritableSignal<T>, InputSignal<T>, OutputRef<T> {
     // (undocumented)
-    [SIGNAL]: ɵInputSignalNode<T, T>;
+    [SIGNAL]: InputSignalNode<T, T>;
 }
 
 // @public @deprecated
@@ -1450,9 +1434,9 @@ export class PlatformRef {
     get injector(): Injector;
     onDestroy(callback: () => void): void;
     // (undocumented)
-    static ɵfac: i0.ɵɵFactoryDeclaration<PlatformRef, never>;
+    static ɵfac: ɵɵFactoryDeclaration<PlatformRef, never>;
     // (undocumented)
-    static ɵprov: i0.ɵɵInjectableDeclaration<PlatformRef>;
+    static ɵprov: ɵɵInjectableDeclaration<PlatformRef>;
 }
 
 // @public
@@ -1475,7 +1459,7 @@ export function provideExperimentalCheckNoChangesForDebug(options: {
     interval?: number;
     useNgZoneOnStable?: boolean;
     exhaustive?: boolean;
-}): EnvironmentProviders_2;
+}): _angular_core.EnvironmentProviders;
 
 // @public
 export function provideExperimentalZonelessChangeDetection(): EnvironmentProviders;
@@ -1806,9 +1790,9 @@ export class Testability implements PublicTestability {
     isStable(): boolean;
     whenStable(doneCb: Function, timeout?: number, updateCb?: Function): void;
     // (undocumented)
-    static ɵfac: i0.ɵɵFactoryDeclaration<Testability, never>;
+    static ɵfac: ɵɵFactoryDeclaration<Testability, never>;
     // (undocumented)
-    static ɵprov: i0.ɵɵInjectableDeclaration<Testability>;
+    static ɵprov: ɵɵInjectableDeclaration<Testability>;
 }
 
 // @public
@@ -1821,9 +1805,9 @@ export class TestabilityRegistry {
     unregisterAllApplications(): void;
     unregisterApplication(token: any): void;
     // (undocumented)
-    static ɵfac: i0.ɵɵFactoryDeclaration<TestabilityRegistry, never>;
+    static ɵfac: ɵɵFactoryDeclaration<TestabilityRegistry, never>;
     // (undocumented)
-    static ɵprov: i0.ɵɵInjectableDeclaration<TestabilityRegistry>;
+    static ɵprov: ɵɵInjectableDeclaration<TestabilityRegistry>;
 }
 
 // @public

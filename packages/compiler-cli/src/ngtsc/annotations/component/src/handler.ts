@@ -116,7 +116,12 @@ import {
   HandlerPrecedence,
   ResolveResult,
 } from '../../../transform';
-import {TemplateId, TypeCheckableDirectiveMeta, TypeCheckContext} from '../../../typecheck/api';
+import {
+  TypeCheckId,
+  TypeCheckableDirectiveMeta,
+  TypeCheckContext,
+  TemplateContext,
+} from '../../../typecheck/api';
 import {ExtendedTemplateChecker} from '../../../typecheck/extended/api';
 import {TemplateSemanticsChecker} from '../../../typecheck/template_semantics/api/api';
 import {getSourceFile} from '../../../util/src/typescript';
@@ -127,11 +132,11 @@ import {
   compileInputTransformFields,
   compileNgFactoryDefField,
   compileResults,
+  createForwardRefResolver,
   extractClassDebugInfo,
   extractClassMetadata,
   extractSchemas,
   findAngularDecorator,
-  forwardRefResolver,
   getDirectiveDiagnostics,
   getProviderDiagnostics,
   InjectableClassRegistry,
@@ -161,6 +166,7 @@ import {
 } from './metadata';
 import {
   _extractTemplateStyleUrls,
+  createEmptyTemplate,
   extractComponentStyleUrls,
   extractInlineStyleResources,
   extractTemplate,
@@ -487,7 +493,13 @@ export class ComponentDecoratorHandler
     } = directiveResult;
     const encapsulation: number =
       (this.compilationMode !== CompilationMode.LOCAL
-        ? resolveEnumValue(this.evaluator, component, 'encapsulation', 'ViewEncapsulation')
+        ? resolveEnumValue(
+            this.evaluator,
+            component,
+            'encapsulation',
+            'ViewEncapsulation',
+            this.isCore,
+          )
         : resolveEncapsulationEnumValueLocally(component.get('encapsulation'))) ??
       ViewEncapsulation.Emulated;
 
@@ -498,6 +510,7 @@ export class ComponentDecoratorHandler
         component,
         'changeDetection',
         'ChangeDetectionStrategy',
+        this.isCore,
       );
     } else if (component.has('changeDetection')) {
       changeDetection = new o.WrappedNodeExpr(component.get('changeDetection')!);
@@ -592,7 +605,7 @@ export class ComponentDecoratorHandler
     ) {
       const importResolvers = combineResolvers([
         createModuleWithProvidersResolver(this.reflector, this.isCore),
-        forwardRefResolver,
+        createForwardRefResolver(this.isCore),
       ]);
 
       const importDiagnostics: ts.Diagnostic[] = [];
@@ -663,50 +676,70 @@ export class ComponentDecoratorHandler
 
       template = preanalyzed;
     } else {
-      const templateDecl = parseTemplateDeclaration(
-        node,
-        decorator,
-        component,
-        containingFile,
-        this.evaluator,
-        this.depTracker,
-        this.resourceLoader,
-        this.defaultPreserveWhitespaces,
-      );
-      template = extractTemplate(
-        node,
-        templateDecl,
-        this.evaluator,
-        this.depTracker,
-        this.resourceLoader,
-        {
-          enableI18nLegacyMessageIdFormat: this.enableI18nLegacyMessageIdFormat,
-          i18nNormalizeLineEndingsInICUs: this.i18nNormalizeLineEndingsInICUs,
-          usePoisonedData: this.usePoisonedData,
-          enableBlockSyntax: this.enableBlockSyntax,
-          enableLetSyntax: this.enableLetSyntax,
-          preserveSignificantWhitespace: this.i18nPreserveSignificantWhitespace,
-        },
-        this.compilationMode,
-      );
-
-      if (
-        this.compilationMode === CompilationMode.LOCAL &&
-        template.errors &&
-        template.errors.length > 0
-      ) {
-        // Template errors are handled at the type check phase. But we skip this phase in local compilation mode. As a result we need to handle the errors now and add them to the diagnostics.
-        if (diagnostics === undefined) {
-          diagnostics = [];
-        }
-
-        diagnostics.push(
-          ...getTemplateDiagnostics(
-            template.errors,
-            '' as TemplateId, // Template ID is required as part of the template type check, mainly for mapping the template to its component class. But here we are generating the diagnostic outside of the type check context, and so we skip the template ID.
-            template.sourceMapping,
-          ),
+      try {
+        const templateDecl = parseTemplateDeclaration(
+          node,
+          decorator,
+          component,
+          containingFile,
+          this.evaluator,
+          this.depTracker,
+          this.resourceLoader,
+          this.defaultPreserveWhitespaces,
         );
+        template = extractTemplate(
+          node,
+          templateDecl,
+          this.evaluator,
+          this.depTracker,
+          this.resourceLoader,
+          {
+            enableI18nLegacyMessageIdFormat: this.enableI18nLegacyMessageIdFormat,
+            i18nNormalizeLineEndingsInICUs: this.i18nNormalizeLineEndingsInICUs,
+            usePoisonedData: this.usePoisonedData,
+            enableBlockSyntax: this.enableBlockSyntax,
+            enableLetSyntax: this.enableLetSyntax,
+            preserveSignificantWhitespace: this.i18nPreserveSignificantWhitespace,
+          },
+          this.compilationMode,
+        );
+
+        if (
+          this.compilationMode === CompilationMode.LOCAL &&
+          template.errors &&
+          template.errors.length > 0
+        ) {
+          // Template errors are handled at the type check phase. But we skip this phase in local
+          // compilation mode. As a result we need to handle the errors now and add them to the diagnostics.
+          if (diagnostics === undefined) {
+            diagnostics = [];
+          }
+
+          diagnostics.push(
+            ...getTemplateDiagnostics(
+              template.errors,
+              // Type check ID is required as part of the ype check, mainly for mapping the
+              // diagnostic back to its source. But here we are generating the diagnostic outside
+              // of the type check context, and so we skip the template ID.
+              '' as TypeCheckId,
+              template.sourceMapping,
+            ),
+          );
+        }
+      } catch (e) {
+        if (e instanceof FatalDiagnosticError) {
+          diagnostics ??= [];
+          diagnostics.push(e.toDiagnostic());
+          isPoisoned = true;
+          // Create an empty template for the missing/invalid template.
+          // A build will still fail in this case. However, for the language service,
+          // this allows the component to exist in the compiler registry and prevents
+          // cascading diagnostics within an IDE due to "missing" components. The
+          // originating template related errors will still be reported in the IDE.
+          template = createEmptyTemplate(node, component, containingFile);
+        } else {
+          throw e;
+        }
       }
     }
     const templateResource = template.declaration.isInline
@@ -1039,17 +1072,21 @@ export class ComponentDecoratorHandler
     }
 
     const binder = new R3TargetBinder<TypeCheckableDirectiveMeta>(scope.matcher);
-    ctx.addTemplate(
+    const templateContext: TemplateContext = {
+      nodes: meta.template.diagNodes,
+      pipes: scope.pipes,
+      sourceMapping: meta.template.sourceMapping,
+      file: meta.template.file,
+      parseErrors: meta.template.errors,
+      preserveWhitespaces: meta.meta.template.preserveWhitespaces ?? false,
+    };
+
+    ctx.addDirective(
       new Reference(node),
       binder,
-      meta.template.diagNodes,
-      scope.pipes,
       scope.schemas,
-      meta.template.sourceMapping,
-      meta.template.file,
-      meta.template.errors,
+      templateContext,
       meta.meta.isStandalone,
-      meta.meta.template.preserveWhitespaces ?? false,
     );
   }
 
@@ -1859,7 +1896,7 @@ export class ComponentDecoratorHandler
     const res = compileResults(fac, def, classMetadata, 'ɵcmp', null, null, debugInfo, null);
     return hmrMeta === null || res.length === 0
       ? null
-      : getHmrUpdateDeclaration(res, pool.statements, hmrMeta, node.getSourceFile());
+      : getHmrUpdateDeclaration(res, pool.statements, hmrMeta, node);
   }
 
   /**

@@ -37,21 +37,12 @@ import {
 } from '@angular/core';
 import {SIGNAL} from '@angular/core/primitives/signals';
 import {toObservable} from '@angular/core/rxjs-interop';
-import {
-  EffectNode,
-  setUseMicrotaskEffectsByDefault,
-} from '@angular/core/src/render3/reactivity/effect';
+import {EffectNode} from '@angular/core/src/render3/reactivity/effect';
 import {TestBed} from '@angular/core/testing';
 import {bootstrapApplication} from '@angular/platform-browser';
 import {withBody} from '@angular/private/testing';
 
 describe('reactivity', () => {
-  let prev: boolean;
-  beforeEach(() => {
-    prev = setUseMicrotaskEffectsByDefault(false);
-  });
-  afterEach(() => setUseMicrotaskEffectsByDefault(prev));
-
   describe('effects', () => {
     beforeEach(destroyPlatform);
     afterEach(destroyPlatform);
@@ -100,7 +91,7 @@ describe('reactivity', () => {
       expect(isStable).toEqual([true, false, true]);
     });
 
-    it('should propagate errors to the ErrorHandler', () => {
+    it('should propagate errors to the ErrorHandler', async () => {
       TestBed.configureTestingModule({
         providers: [{provide: ErrorHandler, useFactory: () => new FakeErrorHandler()}],
         rethrowApplicationErrors: false,
@@ -122,7 +113,7 @@ describe('reactivity', () => {
         },
         {injector: appRef.injector},
       );
-      appRef.tick();
+      await appRef.whenStable();
       expect(run).toBeTrue();
       expect(lastError.message).toBe('fail!');
     });

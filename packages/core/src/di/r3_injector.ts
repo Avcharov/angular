@@ -36,6 +36,7 @@ import {setInjectImplementation} from './inject_switch';
 import {InjectionToken} from './injection_token';
 import type {Injector} from './injector';
 import {
+  BackwardsCompatibleInjector,
   catchInjectorError,
   convertToBitFlags,
   injectArgs,
@@ -51,7 +52,7 @@ import {
   InjectorType,
   ɵɵInjectableDeclaration,
 } from './interface/defs';
-import {InjectFlags, InjectOptions} from './interface/injector';
+import {InternalInjectFlags, InjectOptions} from './interface/injector';
 import {
   ClassProvider,
   ConstructorProvider,
@@ -153,17 +154,10 @@ export abstract class EnvironmentInjector implements Injector {
    */
   abstract get<T>(token: ProviderToken<T>, notFoundValue?: T, options?: InjectOptions): T;
   /**
-   * Retrieves an instance from the injector based on the provided token.
-   * @returns The instance from the injector if defined, otherwise the `notFoundValue`.
-   * @throws When the `notFoundValue` is `undefined` or `Injector.THROW_IF_NOT_FOUND`.
-   * @deprecated use object-based flags (`InjectOptions`) instead.
-   */
-  abstract get<T>(token: ProviderToken<T>, notFoundValue?: T, flags?: InjectFlags): T;
-  /**
    * @deprecated from v4.0.0 use ProviderToken<T>
    * @suppress {duplicate}
    */
-  abstract get(token: any, notFoundValue?: any): any;
+  abstract get<T>(token: string | ProviderToken<T>, notFoundValue?: any): any;
 
   /**
    * Runs the given function in the context of this `EnvironmentInjector`.
@@ -238,12 +232,18 @@ export class R3Injector extends EnvironmentInjector implements PrimitivesInjecto
       this.scopes.add(record.value as InjectorScope);
     }
 
-    this.injectorDefTypes = new Set(this.get(INJECTOR_DEF_TYPES, EMPTY_ARRAY, InjectFlags.Self));
+    this.injectorDefTypes = new Set(this.get(INJECTOR_DEF_TYPES, EMPTY_ARRAY, {self: true}));
   }
 
   retrieve<T>(token: PrimitivesInjectionToken<T>, options?: unknown): T | NotFound {
-    const ngOptions = options as InjectOptions;
-    return this.get(token, ngOptions.optional ? NOT_FOUND : THROW_IF_NOT_FOUND, ngOptions);
+    const flags: InternalInjectFlags =
+      convertToBitFlags(options as InjectOptions | undefined) || InternalInjectFlags.Default;
+    return (this as BackwardsCompatibleInjector).get(
+      token as unknown as InjectionToken<T>,
+      // When a dependency is requested with an optional flag, DI returns null as the default value.
+      flags & InternalInjectFlags.Optional ? null : undefined,
+      flags,
+    )!;
   }
 
   /**
@@ -308,7 +308,7 @@ export class R3Injector extends EnvironmentInjector implements PrimitivesInjecto
   override get<T>(
     token: ProviderToken<T>,
     notFoundValue: any = THROW_IF_NOT_FOUND,
-    flags: InjectFlags | InjectOptions = InjectFlags.Default,
+    options?: InjectOptions,
   ): T {
     assertNotDestroyed(this);
 
@@ -316,7 +316,7 @@ export class R3Injector extends EnvironmentInjector implements PrimitivesInjecto
       return (token as any)[NG_ENV_ID](this);
     }
 
-    flags = convertToBitFlags(flags) as InjectFlags;
+    const flags = convertToBitFlags(options) as InternalInjectFlags;
 
     // Set the injection context.
     let prevInjectContext: InjectorProfilerContext;
@@ -327,7 +327,7 @@ export class R3Injector extends EnvironmentInjector implements PrimitivesInjecto
     const previousInjectImplementation = setInjectImplementation(undefined);
     try {
       // Check for the SkipSelf flag.
-      if (!(flags & InjectFlags.SkipSelf)) {
+      if (!(flags & InternalInjectFlags.SkipSelf)) {
         // SkipSelf isn't set, check if the record belongs to this injector.
         let record: Record<T> | undefined | null = this.records.get(token);
         if (record === undefined) {
@@ -358,11 +358,13 @@ export class R3Injector extends EnvironmentInjector implements PrimitivesInjecto
 
       // Select the next injector based on the Self flag - if self is set, the next injector is
       // the NullInjector, otherwise it's the parent.
-      const nextInjector = !(flags & InjectFlags.Self) ? this.parent : getNullInjector();
+      const nextInjector = !(flags & InternalInjectFlags.Self) ? this.parent : getNullInjector();
       // Set the notFoundValue based on the Optional flag - if optional is set and notFoundValue
       // is undefined, the value is null, otherwise it's the notFoundValue.
       notFoundValue =
-        flags & InjectFlags.Optional && notFoundValue === THROW_IF_NOT_FOUND ? null : notFoundValue;
+        flags & InternalInjectFlags.Optional && notFoundValue === THROW_IF_NOT_FOUND
+          ? null
+          : notFoundValue;
       return nextInjector.get(token, notFoundValue);
     } catch (e: any) {
       if (e.name === 'NullInjectorError') {
@@ -397,7 +399,7 @@ export class R3Injector extends EnvironmentInjector implements PrimitivesInjecto
     }
 
     try {
-      const initializers = this.get(ENVIRONMENT_INITIALIZER, EMPTY_ARRAY, InjectFlags.Self);
+      const initializers = this.get(ENVIRONMENT_INITIALIZER, EMPTY_ARRAY, {self: true});
       if (ngDevMode && !Array.isArray(initializers)) {
         throw new RuntimeError(
           RuntimeErrorCode.INVALID_MULTI_PROVIDER,
