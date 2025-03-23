@@ -905,7 +905,10 @@ export interface InjectableType<T> extends Type<T> {
 
 // @public
 export interface InjectDecorator {
+    (token: string): any;
     (token: any): any;
+    // (undocumented)
+    new (token: string): Inject;
     // (undocumented)
     new (token: any): Inject;
 }
@@ -1834,6 +1837,9 @@ export const TRANSLATIONS: InjectionToken<string>;
 
 // @public
 export const TRANSLATIONS_FORMAT: InjectionToken<string>;
+
+// @public
+export function twoWayBinding(publicName: string, value: WritableSignal<unknown>): Binding;
 
 // @public
 export const Type: FunctionConstructor;

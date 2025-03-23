@@ -6,15 +6,16 @@
  * found in the LICENSE file at https://angular.dev/license
  */
 
+import {WritableSignal} from '../core_reactivity_export_internal';
 import {RuntimeError, RuntimeErrorCode} from '../errors';
-import {Type} from '../interface/type';
+import {Type, Writable} from '../interface/type';
+import {assertNotDefined} from '../util/assert';
 import {bindingUpdated} from './bindings';
-import {listenToDirectiveOutput, wrapListener} from './instructions/listener';
 import {setDirectiveInput, storePropertyBindingMetadata} from './instructions/shared';
 import {DirectiveDef} from './interfaces/definition';
-import {CONTEXT} from './interfaces/view';
 import {getCurrentTNode, getLView, getSelectedTNode, getTView, nextBindingIndex} from './state';
 import {stringifyForError} from './util/stringify_utils';
+import {createOutputListener} from './view/directive_outputs';
 
 /** Symbol used to store and retrieve metadata about a binding. */
 export const BINDING = /* @__PURE__ */ Symbol('BINDING');
@@ -150,27 +151,55 @@ export function outputBinding<T>(eventName: string, listener: (event: T) => unkn
       }
 
       const lView = getLView<{} | null>();
-      const tView = getTView();
       const tNode = getCurrentTNode()!;
-      const context = lView[CONTEXT];
-      const wrappedListener = wrapListener(tNode, lView, context, listener);
-      const hasBound = listenToDirectiveOutput(
-        tNode,
-        tView,
-        lView,
-        target,
-        eventName,
-        wrappedListener,
-      );
 
-      if (!hasBound && ngDevMode) {
-        throw new RuntimeError(
-          RuntimeErrorCode.INVALID_BINDING_TARGET,
-          `${stringifyForError(target.type)} does not have an output with a public name of "${eventName}".`,
-        );
-      }
+      createOutputListener(tNode, lView, listener, target, eventName);
     },
   };
 
   return binding;
+}
+
+/**
+ * Creates a two-way binding.
+ * @param eventName Public name of the two-way compatible input.
+ * @param value Writable signal from which to get the current value and to which to write new
+ * values.
+ *
+ * ### Usage example
+ * In this example we create an instance of the `MyCheckbox` component and bind to its `value`
+ * input using a two-way binding.
+ *
+ * ```
+ * const checkboxValue = signal('');
+ *
+ * createComponent(MyCheckbox, {
+ *   bindings: [
+ *    twoWayBinding('value', checkboxValue),
+ *   ],
+ * });
+ * ```
+ */
+export function twoWayBinding(publicName: string, value: WritableSignal<unknown>): Binding {
+  const input = inputBinding(publicName, value);
+  const output = outputBinding(publicName + 'Change', (eventValue) => value.set(eventValue));
+
+  // We take advantage of inputs only having a `create` block and outputs only having an `update`
+  // block by passing them through directly instead of creating dedicated functions here. This
+  // assumption can break down if one of them starts targeting both blocks. These assertions
+  // are here to help us catch it if something changes in the future.
+  ngDevMode && assertNotDefined(input.create, 'Unexpected `create` callback in inputBinding');
+  ngDevMode && assertNotDefined(output.update, 'Unexpected `update` callback in outputBinding');
+
+  return {
+    [BINDING]: {
+      kind: 'twoWay',
+      requiredVars: input[BINDING].requiredVars + output[BINDING].requiredVars,
+    },
+    set target(target: unknown) {
+      (input as Writable<Binding>).target = (output as Writable<Binding>).target = target;
+    },
+    create: output.create,
+    update: input.update,
+  };
 }
