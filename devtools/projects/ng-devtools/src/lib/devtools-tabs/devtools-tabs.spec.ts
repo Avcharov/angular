@@ -65,6 +65,25 @@ describe('DevtoolsTabsComponent', () => {
     expect(comp).toBeTruthy();
   });
 
+  it('uses the development version when the extension manifest API is unavailable', () => {
+    const globalObject = globalThis as typeof globalThis & {chrome?: unknown};
+    const originalChrome = globalObject.chrome;
+    Object.defineProperty(globalObject, 'chrome', {
+      configurable: true,
+      value: {runtime: {}},
+    });
+
+    try {
+      const fixture = TestBed.createComponent(DevToolsTabsComponent);
+      expect(fixture.componentInstance['extensionVersion']()).toBe('dev-build');
+    } finally {
+      Object.defineProperty(globalObject, 'chrome', {
+        configurable: true,
+        value: originalChrome,
+      });
+    }
+  });
+
   it('toggles inspector flag', () => {
     expect(comp.inspectorRunning()).toBe(false);
     comp.toggleInspectorState();

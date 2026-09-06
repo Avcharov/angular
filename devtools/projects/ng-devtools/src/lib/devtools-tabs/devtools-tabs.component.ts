@@ -144,7 +144,7 @@ export class DevToolsTabsComponent {
       }
     });
 
-    if (typeof chrome !== 'undefined' && chrome.runtime !== undefined) {
+    if (typeof chrome !== 'undefined' && typeof chrome.runtime?.getManifest === 'function') {
       this.extensionVersion.set(chrome.runtime.getManifest().version);
     }
   }
